@@ -1,0 +1,168 @@
+---
+title: "NaV_1.7_GoF_analysis"
+author: "Corin Charman"
+date: "2024-07-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install and load necessary packages
+
+```{r}
+install.packages("ggplot2")
+install.packages("dplyr")
+install.packages("R.utils")
+install.packages("data.table")
+install.packages("purrr")
+
+library(ggplot2)
+library(dplyr)
+library(R.utils)
+library(data.table)
+library(purrr)
+```
+
+## Read in phenotype data
+
+```{r}
+general <- read.csv("UKB_general.csv")
+eop <- read.csv("UKB_EOP.csv")
+pc <- read.csv("UKB_PC.csv")
+prescription_data <- read.csv("UKB_Rx_analgesics.csv")
+```
+
+## Chronic pain formatting
+
+```{r}
+chronic_pain <- data.frame(
+  eid = general$eid,
+  age = general$p21022,
+  sex = general$p31,
+  chronic_pain = rowSums(general[,6:13], na.rm=TRUE) >= 1
+)
+chronic_pain$chronic_pain[chronic_pain$chronic_pain == TRUE] <- 1
+chronic_pain$chronic_pain[chronic_pain$chronic_pain == FALSE] <- 0
+
+chronic_pain$sex[chronic_pain$sex == 0] <- "f"
+chronic_pain$sex[chronic_pain$sex == 1] <- "m"
+```
+
+## Neuropathic pain formatting
+
+```{r}
+keep <- c("eid", "p120046","p120047","p120048","p120049","p120050","p120051","p120052")
+eop <- eop[, (names(eop)) %in% keep]
+
+neuropathic_pain <- data.frame(
+  eid = eop$eid,
+  neuropathic_pain = (rowSums(eop[, c(2:8)], na.rm = FALSE)) >= 3
+)
+
+neuropathic_pain$neuropathic_pain[neuropathic_pain$neuropathic_pain == TRUE] <- 1
+neuropathic_pain$neuropathic_pain[neuropathic_pain$neuropathic_pain == FALSE] <- 0
+```
+
+## Analgesic data formatting
+
+```{r}
+analgesics <- data.frame(eid = prescription_data$eid,
+                     gabapentinoid = case_when(grepl("gabapentin|pregabalin", prescription_data$drug_name, ignore.case = TRUE) ~ 1),
+                     nav_blocker = case_when(grepl("mexiletine|lacosamide|carbamazepine|oxcarbazepine|phenytoin|sodium valproate|lamotrigine", prescription_data$drug_name, ignore.case = TRUE) ~ 1),
+                     opioid_dual = case_when(grepl("tramadol|tapentadol", prescription_data$drug_name, ignore.case = TRUE) ~ 1),
+                     opioid_strong = case_when(grepl("diamorphine|morphine|methadone|fentanyl|buprenorphine|oxycodone|hydromorphone|oramorph", prescription_data$drug_name, ignore.case = TRUE) ~ 1),
+                     tca = case_when(grepl("amitriptyline|nortriptyline|protriptyline|desipramine", prescription_data$drug_name, ignore.case = TRUE) ~ 1))
+
+# removing duplicate rows and changing NA values to 0
+analgesics <- dplyr::distinct(analgesics)
+```
+
+## Principal component formatting
+```{r}
+# rename columns
+pc <- pc[,!(names(pc)) %in% "p22009_a20"]
+colnames(pc)[2:21] <- paste0("PC", 1:20)
+```
+
+## Merging phenotypic data
+```{r}
+df_list <- list(chronic_pain, neuropathic_pain, analgesics, pc)
+
+# merge by eid
+pheno_data <- df_list %>% purrr::reduce(full_join, by='eid')
+
+# set NA values to 0, except neuropathic pain, where NA indicates a negative response
+pheno_data$gabapentinoid[is.na(pheno_data$gabapentinoid)] <- 0
+pheno_data$nav_blocker[is.na(pheno_data$nav_blocker)] <- 0
+pheno_data$opioid_dual[is.na(pheno_data$opioid_dual)] <- 0
+pheno_data$opioid_strong[is.na(pheno_data$opioid_strong)] <- 0
+pheno_data$tca[is.na(pheno_data$tca)] <- 0
+
+# save phenotype data
+write.csv(pheno_data, "pheno_data.csv")
+```
+
+## Load function for quickly reading vcf files
+
+```{r}
+fread_vcf <- function(vcf_file,
+                      chunksize = 1000,
+                      verbose = FALSE) {
+  vcf_chunk_list <- list()  # List to store the VCF data frames
+  chunk_count <-
+    0  # Variable to keep track of the number of chunks read
+
+  while (TRUE) {
+    if (verbose == TRUE) {
+      cat("\n", "Reading chunk ", chunk_count + 1)
+    }
+    skip <- chunksize * chunk_count
+    vcf <-
+      fread(vcf_file,
+            verbose = verbose,
+            nrows = chunksize,
+            skip = skip)
+
+    if (nrow(vcf) == 0) {
+      break  # Exit the loop if no more rows are read
+    }
+    vcf_chunk_list[[chunk_count + 1]] <-
+      vcf  # Append the current chunk to the list
+    chunk_count <- chunk_count + 1  # Increment the chunk count
+
+    if (nrow(vcf) < chunksize) {
+      break  # Exit the loop if the last chunk didn't fill the specified rows
+      if (verbose == TRUE) {
+        cat("\n", "Finished.", "\n")
+      }
+    }
+  }
+  output <-
+    rbindlist(vcf_chunk_list, use.names = FALSE, fill = FALSE)
+  rm(vcf_chunk_list)
+  return(output)
+}
+```
+
+## Read in the annotated SCN9A gene vcf and count data
+```{r}
+anno <- fread_vcf("SCN9A_gene_anno.vcf")
+gcount <- fread("SCN9A_gene.gcount")
+
+# Split the annotation columns and extract the column headers from the vcf metadata
+anno <- anno$V1[8]
+anno <- sub(".*Format: ", "", anno)
+anno <- sub("\">", "", anno)
+anno_cols <- strsplit(anno, "\\|")[[1]]
+vcf <- delim_vcf_anno(vcf, 'INFO', n_columns = 78, delim = '|')
+colnames(vcf)[8:85] <- anno_cols
+
+# merge the annotated vcf with count data
+vcf <- merge(anno, gcount, by = c("#CHROM","ID","REF","ALT"))
+saveRDS(vcf, here("data","scn9a_vcf.rds"))
+```
+
+
+
