@@ -164,5 +164,51 @@ vcf <- merge(anno, gcount, by = c("#CHROM","ID","REF","ALT"))
 saveRDS(vcf, here("data","scn9a_vcf.rds"))
 ```
 
+## Carrier extraction
+```{r}
+# read in mutation table
+mut <- read_xlsx("mut_table.xlsx")
+
+extract_mutant <- function(variant, dataset) {
+  sub_group <- subset(dataset, ID == variant)
+  
+  eid_list <- list()
+  counter = 0
+  for (element in sub_group) {
+    counter = counter+1
+    if (is.na(element)) {
+      print("na")
+    }
+    else if (element == "0/1" | element == "1/0" | element == "1/1") {
+      eid_list <- append(eid_list, colnames(sub_group)[counter])
+    }
+  }
+  
+  return(eid_list)
+}
+
+
+# generating a list of carrier eid, extracting from genotypic dataset
+carriers_eid <- list()
+carriers_eid$eid <- NA
+
+for (i in 1:length(mut$ID)) {
+  carriers_eid$eid[i] = list(extract_mutant(mut$ID[i], vcf))
+}
+eid_list <- unlist(carriers_eid$eid)
+
+# extracting the carrier populations from phenotypic data population
+# import in .txt file containing extended string that extracts individuals matching each eid for the carrier group, and extracts those not matching each eid for the control group
+# this is using the pheno_data dataframe created earlier
+carriers <- source("carrier_extraction.txt")
+controls <- source("control_extraction.txt")
+carriers <- carriers$value
+controls <- controls$value
+
+carriers$carrier <- 1
+controls$carrier <- 0
+
+pheno_sorted <- rbind(carriers, controls, by="eid", all=TRUE)
+```
 
 
