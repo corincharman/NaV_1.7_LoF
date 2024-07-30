@@ -1,0 +1,60 @@
+---
+title: "NaV_1.7_GoF_analysis_and_visualisation"
+author: "Corin Charman"
+date: "2024-07-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load the necessary packages
+```{r}
+install.packages("ggplot2")
+library(ggplot2)
+```
+
+## Load in the required dataframe
+```{r}
+pheno_sorted <- read.csv("pheno_sorted.csv")
+```
+
+## Generating Generalised Linear Models for each analysis being performed, compiling results into a singular data frame
+```{r}
+phenotypes <- c("chronic_pain","neuropathic_pain","gabapentinoid","nav_blocker","opioid_dual","opioid_strong","tca")
+
+glm_data = list()
+glm_data$phenotype <- character()
+glm_data$p_value <- numeric()
+glm_data$or <- numeric()
+glm_data$ci_low <- numeric()
+glm_data$ci_high <- numeric()
+
+for (i in seq_along(phenotypes)){
+  model <- glm(as.formula(paste(phenotypes[i], "~carrier + sex + age + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10")),
+               data=pheno_sorted,
+               family=binomial(link="logit"))
+  glm_data$phenotype <- append(glm_data$phenotype, phenotypes[i])
+  glm_data$p_value <- append(glm_data$p_value, coef(summary(model))[2,4])
+  glm_data$or <- append(glm_data$or, exp(model$coefficients)[2])
+  glm_data$ci_low <- append(glm_data$ci_low, exp(confint(model))[2,1])
+  glm_data$ci_high <- append(glm_data$ci_high, exp(confint(model))[2,2])
+}
+glm_data <- as.data.frame(glm_data)
+```
+
+## Visualise the odds ratios for each phenotype
+```{r}
+# define the order for each phenotype to appear on the graph
+order <- c("tca","opioid_strong","opioid_dual","nav_blocker","gabapentinoid","neuropathic_pain","chronic_pain")
+or_plot <- ggplot(glm_data, aes(x=or, y=factor(phenotype, levels=order))) + 
+  geom_vline(aes(xintercept=1), linewidth=.25, linetype="dashed") +
+  geom_errorbarh(aes(xmin=ci_low, xmax=ci_high), linewidth=0.5, height=0.25) + 
+  theme_bw() + 
+  geom_point(size=2, color="black") +
+  labs(x = "Odds ratio ± 95%CI", y= "")
+
+or_plot
+```
+
