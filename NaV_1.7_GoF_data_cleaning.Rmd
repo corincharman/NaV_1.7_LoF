@@ -205,10 +205,13 @@ controls <- source("control_extraction.txt")
 carriers <- carriers$value
 controls <- controls$value
 
+# assigning whether each individual is a carrier or not
 carriers$carrier <- 1
 controls$carrier <- 0
 
+# combining sorted datasets into one
 pheno_sorted <- rbind(carriers, controls, by="eid", all=TRUE)
+write.csv(pheno_sorted, "pheno_sorted.csv")
 ```
 
 
