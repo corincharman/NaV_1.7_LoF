@@ -45,7 +45,7 @@ for (i in seq_along(phenotypes)){
 glm_data <- as.data.frame(glm_data)
 
 # adjust p-values for multiple comparisons
-glm_data$p_value <- p.adjust(glm_data$p_value)
+glm_data$p_value <- p.adjust(glm_data$p_value, method="fdr")
 ```
 
 ## Visualise the odds ratios for each phenotype
