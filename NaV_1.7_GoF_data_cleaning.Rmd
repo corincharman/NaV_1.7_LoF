@@ -73,6 +73,12 @@ analgesics <- data.frame(eid = prescription_data$eid,
                      opioid_strong = case_when(grepl("diamorphine|morphine|methadone|fentanyl|buprenorphine|oxycodone|hydromorphone|oramorph", prescription_data$drug_name, ignore.case = TRUE) ~ 1),
                      tca = case_when(grepl("amitriptyline|nortriptyline|protriptyline|desipramine", prescription_data$drug_name, ignore.case = TRUE) ~ 1))
 
+gaba <- gaba %>% drop_na()
+nav <- nav %>% drop_na()
+dual <- dual %>% drop_na()
+strong <- strong %>% drop_na()
+tca <- tca %>% drop_na()
+
 # removing duplicate rows and changing NA values to 0
 analgesics <- dplyr::distinct(analgesics)
 ```
